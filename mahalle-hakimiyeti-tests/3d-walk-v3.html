@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>Mahalle Hâkimiyeti — Walk v3</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#090b10;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+#ui{position:fixed;z-index:10;left:12px;top:12px;max-width:min(92vw,430px);padding:12px 14px;border-radius:14px;color:#fff;background:rgba(14,17,23,.82);border:1px solid rgba(255,255,255,.13);backdrop-filter:blur(8px)}
+#ui b{font-size:15px}#ui p{font-size:12px;line-height:1.35;color:#c8cfda;margin:6px 0 10px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{border:1px solid rgba(255,255,255,.14);background:#202733;color:#fff;padding:8px 10px;border-radius:10px;font-weight:700}label{font-size:12px;color:#c8cfda}input{width:120px}
+#badge{position:fixed;right:12px;bottom:12px;color:#dce2ec;background:rgba(14,17,23,.75);padding:8px 10px;border-radius:10px;font-size:11px}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+</style>
+</head>
+<body>
+<div id="ui"><b>MAHALLE HÂKİMİYETİ — YÜRÜYÜŞ v3</b><p>Contact → Down → Passing → Up → Contact. Bir ayak basarken diğeri diz kırıp öne geçer. Mavi bizden uzaklaşır ve sırtını gösterir; kırmızı bize gelir ve yüzünü gösterir.</p><div class="row"><button id="pause">Duraklat</button><button id="cam">Kamera: Arena</button><label>Hız <input id="speed" type="range" min="0.65" max="1.35" step="0.05" value="1"></label></div></div>
+<div id="badge">v3 • gerçek key-pose gait • yön düzeltildi</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js';
+const scene=new THREE.Scene();scene.background=new THREE.Color(0x090b10);scene.fog=new THREE.Fog(0x090b10,18,44);
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.appendChild(renderer.domElement);
+const camera=new THREE.PerspectiveCamera(48,innerWidth/innerHeight,.1,100);camera.position.set(0,11.5,16.5);camera.lookAt(0,1.6,0);
+scene.add(new THREE.HemisphereLight(0xaab8d8,0x1a1410,1.8));const dl=new THREE.DirectionalLight(0xffe6c9,2.5);dl.position.set(-5,11,7);dl.castShadow=true;scene.add(dl);const rim=new THREE.DirectionalLight(0x6688ff,1.8);rim.position.set(7,5,-8);scene.add(rim);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(18,30),new THREE.MeshStandardMaterial({color:0x171a20,roughness:.92}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+for(const x of [-4.2,4.2]){const l=new THREE.Mesh(new THREE.PlaneGeometry(.05,28),new THREE.MeshBasicMaterial({color:0x8793a8,transparent:true,opacity:.18}));l.rotation.x=-Math.PI/2;l.position.set(x,.006,0);scene.add(l)}
+const mid=new THREE.Mesh(new THREE.PlaneGeometry(16,.06),new THREE.MeshBasicMaterial({color:0xd9b765,transparent:true,opacity:.35}));mid.rotation.x=-Math.PI/2;mid.position.y=.007;scene.add(mid);
+const M=(c,r=.75)=>new THREE.MeshStandardMaterial({color:c,roughness:r});
+const skin=M(0xd6a077,.85),dark=M(0x1e2229,.9),pants=M(0x2a3038,.9);
+function box(w,h,d,c){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d,2,2,2),M(c));m.castShadow=true;return m}
+function sphere(r,mat){const m=new THREE.Mesh(new THREE.SphereGeometry(r,14,10),mat);m.castShadow=true;return m}
+function limb(len,rad,mat){const m=new THREE.Mesh(new THREE.CylinderGeometry(rad,rad,len,10),mat);m.castShadow=true;return m}
+function placeSegment(mesh,a,b){const v=new THREE.Vector3().subVectors(b,a),len=v.length();mesh.position.copy(a).add(b).multiplyScalar(.5);mesh.scale.y=len;mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),v.clone().normalize())}
+function lerp(a,b,t){return a+(b-a)*t}function smooth(t){return t*t*(3-2*t)}
+function makeCharacter(primary=0x315fcb,accent=0xe2c36d){const root=new THREE.Group();const body=new THREE.Group();root.add(body);const pelvis=box(.72,.34,.42,primary);pelvis.position.set(0,1.92,0);body.add(pelvis);const torso=box(.98,1.18,.50,primary);torso.position.set(0,2.68,0);body.add(torso);const band=box(1.01,.10,.53,accent);band.position.set(0,2.85,.01);body.add(band);const head=sphere(.34,skin);head.scale.set(.92,1.08,.92);head.position.set(0,3.65,0);body.add(head);const hair=sphere(.34,dark);hair.scale.set(.94,.55,.94);hair.position.set(0,3.86,0);body.add(hair);const nose=new THREE.Mesh(new THREE.ConeGeometry(.07,.18,10),skin);nose.rotation.x=Math.PI/2;nose.position.set(0,3.65,.35);body.add(nose);const chest=box(.26,.26,.05,accent);chest.position.set(0,2.76,.28);body.add(chest);const back=box(.48,.52,.08,0x161a20);back.position.set(0,2.64,-.30);body.add(back);const upperL=limb(1,.16,pants),lowerL=limb(1,.14,pants),upperR=limb(1,.16,pants),lowerR=limb(1,.14,pants);body.add(upperL,lowerL,upperR,lowerR);const kneeL=sphere(.14,dark),kneeR=sphere(.14,dark);body.add(kneeL,kneeR);const footL=box(.32,.20,.56,0x101216),footR=box(.32,.20,.56,0x101216);body.add(footL,footR);const armUL=limb(1,.12,M(primary)),armLL=limb(1,.11,skin),armUR=limb(1,.12,M(primary)),armLR=limb(1,.11,skin);body.add(armUL,armLL,armUR,armLR);const handL=sphere(.13,skin),handR=sphere(.13,skin);body.add(handL,handR);root.userData.rig={body,pelvis,torso,head,hair,nose,chest,back,upperL,lowerL,upperR,lowerR,kneeL,kneeR,footL,footR,armUL,armLL,armUR,armLR,handL,handR};return root}
+const poses=[{p:0,lz:.48,ly:.12,rz:-.40,ry:.12,py:1.94},{p:.125,lz:.30,ly:.10,rz:-.30,ry:.12,py:1.88},{p:.25,lz:.08,ly:.10,rz:-.05,ry:.25,py:1.92},{p:.375,lz:-.18,ly:.11,rz:.27,ry:.30,py:1.99},{p:.5,lz:-.40,ly:.12,rz:.48,ry:.12,py:1.94},{p:.625,lz:-.30,ly:.12,rz:.30,ry:.10,py:1.88},{p:.75,lz:-.05,ly:.25,rz:.08,ry:.10,py:1.92},{p:.875,lz:.27,ly:.30,rz:-.18,ry:.11,py:1.99},{p:1,lz:.48,ly:.12,rz:-.40,ry:.12,py:1.94}];
+function samplePose(t){t=((t%1)+1)%1;let i=0;while(i<poses.length-1&&t>poses[i+1].p)i++;const a=poses[i],b=poses[i+1],u=smooth((t-a.p)/(b.p-a.p));const out={};for(const k of ['lz','ly','rz','ry','py'])out[k]=lerp(a[k],b[k],u);return out}
+function solveLeg(hip,foot){const L1=.92,L2=.86;const dy=foot.y-hip.y,dz=foot.z-hip.z;let d=Math.hypot(dy,dz);d=Math.min(L1+L2-.001,Math.max(Math.abs(L1-L2)+.001,d));const a=(L1*L1-L2*L2+d*d)/(2*d),h=Math.sqrt(Math.max(0,L1*L1-a*a)),uy=dy/d,uz=dz/d,baseY=hip.y+a*uy,baseZ=hip.z+a*uz,py=-uz,pz=uy,k1={y:baseY+h*py,z:baseZ+h*pz},k2={y:baseY-h*py,z:baseZ-h*pz},knee=(k1.z>k2.z)?k1:k2;return new THREE.Vector3(hip.x,knee.y,knee.z)}
+function animateLeg(r,isLeft,footY,footZ){const x=isLeft?-.25:.25,hip=new THREE.Vector3(x,1.84,0),foot=new THREE.Vector3(x,footY,footZ),knee=solveLeg(hip,foot),up=isLeft?r.upperL:r.upperR,lo=isLeft?r.lowerL:r.lowerR,ks=isLeft?r.kneeL:r.kneeR,fm=isLeft?r.footL:r.footR;placeSegment(up,hip,knee);placeSegment(lo,knee,foot);ks.position.copy(knee);fm.position.copy(foot);fm.position.y-=.03;fm.rotation.x=footY>.16?-.12:0}
+function animateArms(r,phase){const s=Math.sin(phase*Math.PI*2),shoulderL=new THREE.Vector3(-.60,3.17,0),shoulderR=new THREE.Vector3(.60,3.17,0),elbowL=new THREE.Vector3(-.64,2.75,-.18*s),elbowR=new THREE.Vector3(.64,2.75,.18*s),handL=new THREE.Vector3(-.62,2.35,-.32*s),handR=new THREE.Vector3(.62,2.35,.32*s);placeSegment(r.armUL,shoulderL,elbowL);placeSegment(r.armLL,elbowL,handL);placeSegment(r.armUR,shoulderR,elbowR);placeSegment(r.armLR,elbowR,handR);r.handL.position.copy(handL);r.handR.position.copy(handR)}
+function animateCharacter(ch,phase){const r=ch.userData.rig,p=samplePose(phase);animateLeg(r,true,p.ly,p.lz);animateLeg(r,false,p.ry,p.rz);const dy=p.py-1.94;r.pelvis.position.y=1.92+dy;r.torso.position.y=2.68+dy;r.head.position.y=3.65+dy;r.hair.position.y=3.86+dy;r.nose.position.y=3.65+dy;r.chest.position.y=2.76+dy;r.back.position.y=2.64+dy;const sway=Math.sin(phase*Math.PI*2);r.pelvis.rotation.z=.028*sway;r.torso.rotation.y=-.045*sway;animateArms(r,phase)}
+const blue=makeCharacter(0x315fcb,0xe7c66d),red=makeCharacter(0xa54141,0xd7b45d);scene.add(blue,red);blue.position.set(-2.25,0,8.3);red.position.set(2.25,0,-8.3);blue.rotation.y=Math.PI;red.rotation.y=0;
+let paused=false,speedMul=1,close=false,phase=0;const clock=new THREE.Clock();document.getElementById('pause').onclick=()=>{paused=!paused;document.getElementById('pause').textContent=paused?'Devam et':'Duraklat'};document.getElementById('speed').oninput=e=>speedMul=+e.target.value;document.getElementById('cam').onclick=()=>{close=!close;document.getElementById('cam').textContent=close?'Kamera: Yakın':'Kamera: Arena'};
+function wrap(z,d){if(d<0&&z<-9.1)return 9.1;if(d>0&&z>9.1)return-9.1;return z}
+function loop(){requestAnimationFrame(loop);const dt=Math.min(clock.getDelta(),.033);if(!paused){const cycleHz=1.16*speedMul;phase=(phase+dt*cycleHz)%1;const stride=.88,worldSpeed=stride*cycleHz;blue.position.z=wrap(blue.position.z-worldSpeed*dt,-1);red.position.z=wrap(red.position.z+worldSpeed*dt,1)}animateCharacter(blue,phase);animateCharacter(red,(phase+.5)%1);const target=close?new THREE.Vector3(0,5.8,8.8):new THREE.Vector3(0,11.5,16.5);camera.position.lerp(target,.06);camera.lookAt(0,close?1.85:1.65,0);renderer.render(scene,camera)}loop();addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script>
+</body></html>
