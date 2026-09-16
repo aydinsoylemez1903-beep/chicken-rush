@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Mahalle Hâkimiyeti — 3D Karakter Yürüyüş Testi</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#090b10;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+  #ui{
+    position:fixed;left:12px;top:12px;z-index:10;color:#f4efe5;
+    background:rgba(15,18,24,.78);border:1px solid rgba(255,255,255,.12);
+    border-radius:14px;padding:12px 14px;backdrop-filter:blur(8px);max-width:min(92vw,390px);
+    box-shadow:0 12px 40px rgba(0,0,0,.35)
+  }
+  #ui b{font-size:15px}
+  #ui p{margin:6px 0 10px;font-size:12px;line-height:1.35;color:#c7ccd7}
+  .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  button{
+    appearance:none;border:1px solid rgba(255,255,255,.16);background:#1e2530;color:#fff;
+    padding:8px 10px;border-radius:10px;font-weight:700;cursor:pointer
+  }
+  button:active{transform:translateY(1px)}
+  label{font-size:12px;color:#c7ccd7}
+  input[type=range]{width:125px}
+  #badge{
+    position:fixed;right:12px;bottom:12px;color:#d9dde6;background:rgba(15,18,24,.7);
+    border:1px solid rgba(255,255,255,.1);border-radius:12px;padding:8px 10px;font-size:11px
+  }
+  canvas{display:block;width:100%;height:100%;touch-action:none}
+</style>
+</head>
+<body>
+<div id="ui">
+  <b>MAHALLE HÂKİMİYETİ — 3D YÜRÜYÜŞ TESTİ</b>
+  <p>
+    Mavi karakter karşıya giderken sırtını, kırmızı karakter bize gelirken yüzünü gösterir.
+    Bacaklar yalnızca “makas” gibi dönmez; kalça, diz, ayak bileği, gövde ve kollar birlikte çalışır.
+  </p>
+  <div class="row">
+    <button id="pauseBtn">Duraklat</button>
+    <button id="viewBtn">Kamera: Arena</button>
+    <label>Hız <input id="speed" type="range" min="0.55" max="1.45" value="1" step="0.05"></label>
+  </div>
+</div>
+<div id="badge">Temel rig v1 • idle + doğal yürüyüş</div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x090b10);
+scene.fog = new THREE.Fog(0x090b10, 18, 44);
+
+const renderer = new THREE.WebGLRenderer({antialias:true, powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(48, innerWidth/innerHeight, .1, 100);
+camera.position.set(0, 12.5, 16.5);
+camera.lookAt(0, 1.8, 0);
+
+scene.add(new THREE.HemisphereLight(0xaab7d8, 0x1d1510, 1.7));
+const key = new THREE.DirectionalLight(0xffe5c4, 2.7);
+key.position.set(-5, 11, 7);
+key.castShadow = true;
+key.shadow.mapSize.set(2048,2048);
+key.shadow.camera.left=-14; key.shadow.camera.right=14; key.shadow.camera.top=14; key.shadow.camera.bottom=-14;
+scene.add(key);
+
+const rim = new THREE.DirectionalLight(0x668dff, 2.1);
+rim.position.set(7,6,-7);
+scene.add(rim);
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(18, 30),
+  new THREE.MeshStandardMaterial({color:0x171a20, roughness:.9, metalness:.05})
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const centerLine = new THREE.Mesh(
+  new THREE.PlaneGeometry(16, .08),
+  new THREE.MeshBasicMaterial({color:0xe0b869, transparent:true, opacity:.35})
+);
+centerLine.rotation.x=-Math.PI/2;
+centerLine.position.y=.006;
+scene.add(centerLine);
+
+for (const x of [-4.2,4.2]) {
+  const lane = new THREE.Mesh(
+    new THREE.PlaneGeometry(.05,28),
+    new THREE.MeshBasicMaterial({color:0x8390a7,transparent:true,opacity:.16})
+  );
+  lane.rotation.x=-Math.PI/2; lane.position.set(x,.008,0); scene.add(lane);
+}
+
+const mat = (c, rough=.7) => new THREE.MeshStandardMaterial({color:c,roughness:rough,metalness:.04});
+const skin = mat(0xd6a077,.8);
+const dark = mat(0x20242b,.9);
+
+function roundedBox(w,h,d,r=0.08,color=0xffffff){
+  const g = new THREE.BoxGeometry(w,h,d,2,2,2);
+  const m = mat(color,.72);
+  const mesh = new THREE.Mesh(g,m);
+  mesh.castShadow = mesh.receiveShadow = true;
+  return mesh;
+}
+
+function jointSphere(r, material){
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r,12,8), material);
+  m.castShadow = true;
+  return m;
+}
+
+function makeCharacter(primary=0x315fcb, accent=0xe6c36a){
+  const root = new THREE.Group();
+  const rig = new THREE.Group();
+  root.add(rig);
+  const pelvisPivot = new THREE.Group();
+  pelvisPivot.position.y = 1.92;
+  rig.add(pelvisPivot);
+  const pelvis = roundedBox(.72,.35,.42,.06,primary);
+  pelvis.position.y=.02;
+  pelvisPivot.add(pelvis);
+  const spine = new THREE.Group();
+  spine.position.set(0,.20,0);
+  pelvisPivot.add(spine);
+  const torso = roundedBox(.98,1.18,.50,.08,primary);
+  torso.position.y=.66;
+  spine.add(torso);
+  const chestBand = roundedBox(1.01,.12,.53,.04,accent);
+  chestBand.position.y=.82;
+  torso.add(chestBand);
+  const neck = new THREE.Group();
+  neck.position.set(0,1.30,0);
+  spine.add(neck);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.34,18,14),skin);
+  head.scale.set(.92,1.08,.92);
+  head.position.y=.28;
+  head.castShadow=true;
+  neck.add(head);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(.335,18,12,0,Math.PI*2,0,Math.PI*.52),dark);
+  hair.scale.set(.94,1.02,.94); hair.position.y=.36; hair.castShadow=true; neck.add(hair);
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(.07,.18,10),skin);
+  nose.rotation.x=Math.PI/2; nose.position.set(0,.29,.34); neck.add(nose);
+
+  function makeArm(side){
+    const shoulder = new THREE.Group();
+    shoulder.position.set(side*.60,1.05,0);
+    spine.add(shoulder);
+    const upper = roundedBox(.25,.73,.25,.05,primary);
+    upper.position.y=-.34; shoulder.add(upper);
+    const elbow = new THREE.Group();
+    elbow.position.y=-.70; shoulder.add(elbow);
+    elbow.add(jointSphere(.12, skin));
+    const fore = roundedBox(.22,.66,.22,.05,0xb77d58);
+    fore.position.y=-.31; elbow.add(fore);
+    const hand = jointSphere(.13,skin);
+    hand.position.y=-.67; elbow.add(hand);
+    return {shoulder, elbow};
+  }
+  const armL=makeArm(-1), armR=makeArm(1);
+
+  function makeLeg(side){
+    const hip = new THREE.Group();
+    hip.position.set(side*.25,-.10,0);
+    pelvisPivot.add(hip);
+    const upper = roundedBox(.31,.92,.34,.05,0x303741);
+    upper.position.y=-.45; hip.add(upper);
+    const knee = new THREE.Group();
+    knee.position.y=-.88; hip.add(knee);
+    knee.add(jointSphere(.14,dark));
+    const lower = roundedBox(.28,.82,.30,.05,0x242932);
+    lower.position.y=-.39; knee.add(lower);
+    const ankle = new THREE.Group();
+    ankle.position.y=-.80; knee.add(ankle);
+    const foot = roundedBox(.31,.20,.55,.04,0x111216);
+    foot.position.set(0,-.08,.13);
+    ankle.add(foot);
+    return {hip,knee,ankle};
+  }
+  const legL=makeLeg(-1), legR=makeLeg(1);
+  root.userData.rig = {root, pelvisPivot, spine, neck, armL, armR, legL, legR, speed:1};
+  return root;
+}
+
+function animateRig(character, t, moveAmount=1){
+  const r=character.userData.rig;
+  const phase=t * 2.2 * r.speed;
+  const s=Math.sin(phase);
+  const c=Math.cos(phase);
+  r.pelvisPivot.position.y = 1.92 + 0.035*Math.cos(phase*2)*moveAmount;
+  r.pelvisPivot.rotation.z = 0.035*s*moveAmount;
+  r.pelvisPivot.rotation.y = 0.055*s*moveAmount;
+  r.spine.rotation.y = -0.08*s*moveAmount;
+  r.spine.rotation.z = -0.018*s*moveAmount;
+  r.spine.rotation.x = 0.018*Math.cos(phase*2)*moveAmount;
+  r.neck.rotation.y = 0.035*s*moveAmount;
+  r.neck.rotation.z = 0.012*s*moveAmount;
+  const hipSwing=.43*s*moveAmount;
+  r.legL.hip.rotation.x = hipSwing;
+  r.legR.hip.rotation.x = -hipSwing;
+  const leftSwing = Math.max(0, s);
+  const rightSwing = Math.max(0,-s);
+  const leftKnee = (0.08 + 0.62*Math.pow(leftSwing,.9) + .12*(1-Math.abs(c)))*moveAmount;
+  const rightKnee= (0.08 + 0.62*Math.pow(rightSwing,.9)+ .12*(1-Math.abs(c)))*moveAmount;
+  r.legL.knee.rotation.x = -leftKnee;
+  r.legR.knee.rotation.x = -rightKnee;
+  r.legL.ankle.rotation.x = (-hipSwing + leftKnee)*.45;
+  r.legR.ankle.rotation.x = ( hipSwing + rightKnee)*.45;
+  const armSwing=.34*s*moveAmount;
+  r.armL.shoulder.rotation.x = -armSwing;
+  r.armR.shoulder.rotation.x =  armSwing;
+  r.armL.elbow.rotation.x = -(.12 + .11*Math.max(0,-s))*moveAmount;
+  r.armR.elbow.rotation.x = -(.12 + .11*Math.max(0, s))*moveAmount;
+  r.armL.shoulder.rotation.z = .06 + .018*c*moveAmount;
+  r.armR.shoulder.rotation.z = -.06 - .018*c*moveAmount;
+  if(moveAmount < .02){
+    r.spine.position.y = Math.sin(t*1.8)*.012;
+    r.armL.shoulder.rotation.x = Math.sin(t*1.4)*.018;
+    r.armR.shoulder.rotation.x = -Math.sin(t*1.4)*.018;
+  } else r.spine.position.y = 0;
+}
+
+const blue=makeCharacter(0x315fcb,0xe7c66d);
+const red=makeCharacter(0xa53e3e,0xd7b45d);
+scene.add(blue,red);
+blue.position.set(-2.25,0,8.5);
+red.position.set(2.25,0,-8.5);
+blue.rotation.y = Math.PI;
+red.rotation.y = 0;
+
+let paused=false;
+let speedMultiplier=1;
+let closeCam=false;
+const clock=new THREE.Clock();
+let elapsed=0;
+
+const pauseBtn=document.getElementById('pauseBtn');
+pauseBtn.onclick=()=>{paused=!paused; pauseBtn.textContent=paused?'Devam et':'Duraklat';};
+document.getElementById('speed').oninput=(e)=>speedMultiplier=+e.target.value;
+const viewBtn=document.getElementById('viewBtn');
+viewBtn.onclick=()=>{
+  closeCam=!closeCam;
+  viewBtn.textContent=closeCam?'Kamera: Yakın':'Kamera: Arena';
+};
+
+function wrapCharacter(z, dir){
+  if(dir<0 && z<-9.2) return 9.2;
+  if(dir>0 && z>9.2) return -9.2;
+  return z;
+}
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=Math.min(clock.getDelta(),.033);
+  if(!paused) elapsed += dt;
+  const move=paused?0:1;
+  const walkSpeed=1.45*speedMultiplier;
+  if(!paused){
+    blue.position.z=wrapCharacter(blue.position.z-walkSpeed*dt,-1);
+    red.position.z=wrapCharacter(red.position.z+walkSpeed*dt,1);
+  }
+  blue.userData.rig.speed=speedMultiplier;
+  red.userData.rig.speed=speedMultiplier;
+  animateRig(blue,elapsed,move);
+  animateRig(red,elapsed+.55,move);
+  const targetPos=closeCam ? new THREE.Vector3(0,6.2,9.0) : new THREE.Vector3(0,12.5,16.5);
+  camera.position.lerp(targetPos,.06);
+  camera.lookAt(0, closeCam?1.8:1.65, 0);
+  renderer.render(scene,camera);
+}
+animate();
+
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+</script>
+</body>
+</html>
