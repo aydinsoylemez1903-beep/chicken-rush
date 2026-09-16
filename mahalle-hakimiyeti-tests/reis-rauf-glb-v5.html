@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>Mahalle Hâkimiyeti — Reis Rauf GLB v5</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#080a0e;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+#ui{position:fixed;z-index:10;left:12px;top:12px;max-width:min(92vw,430px);padding:12px 14px;border-radius:14px;color:#fff;background:rgba(14,17,23,.84);border:1px solid rgba(255,255,255,.13);backdrop-filter:blur(8px)}
+#ui b{font-size:15px}#ui p{font-size:12px;line-height:1.35;color:#c8cfda;margin:6px 0 10px}.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+button{border:1px solid rgba(255,255,255,.14);background:#202733;color:#fff;padding:8px 10px;border-radius:10px;font-weight:700}label{font-size:12px;color:#c8cfda}input{width:120px}
+#badge{position:fixed;right:12px;bottom:12px;color:#dce2ec;background:rgba(14,17,23,.78);padding:8px 10px;border-radius:10px;font-size:11px}
+canvas{display:block;width:100%;height:100%;touch-action:none}
+</style>
+</head>
+<body>
+<div id="ui"><b>REİS RAUF — GERÇEK GLB RIG TESTİ v5</b><p>Bu kez karakter ayrı bir <b>.glb</b> 3D dosyasından yükleniyor. Beğendiğimiz v3 yürüyüş fazları doğrudan modeldeki Hip/Knee/Ankle/Foot node’larını hareket ettiriyor.</p><div class="row"><button id="pause">Duraklat</button><button id="cam">Kamera: Arena</button><label>Hız <input id="speed" type="range" min="0.65" max="1.35" step="0.05" value="1"></label></div></div>
+<div id="badge">v5 • Reis Rauf .glb • v3 gait</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.181.1/build/three.module.js';
+import { GLTFLoader } from 'https://cdn.jsdelivr.net/npm/three@0.181.1/examples/jsm/loaders/GLTFLoader.js';
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x080a0e);
+scene.fog=new THREE.Fog(0x080a0e,18,42);
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.setSize(innerWidth,innerHeight);renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;document.body.appendChild(renderer.domElement);
+const camera=new THREE.PerspectiveCamera(47,innerWidth/innerHeight,.1,100);camera.position.set(0,11.5,16);camera.lookAt(0,1.7,0);
+scene.add(new THREE.HemisphereLight(0xaab7d8,0x211812,1.9));
+const key=new THREE.DirectionalLight(0xffe1bc,3.2);key.position.set(-5,11,8);key.castShadow=true;key.shadow.mapSize.set(2048,2048);scene.add(key);
+const rim=new THREE.DirectionalLight(0x6a88ff,2.0);rim.position.set(8,6,-7);scene.add(rim);
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(18,30),new THREE.MeshStandardMaterial({color:0x161a20,roughness:.92}));ground.rotation.x=-Math.PI/2;ground.receiveShadow=true;scene.add(ground);
+const lineMat=new THREE.MeshBasicMaterial({color:0xcba35d,transparent:true,opacity:.28});const center=new THREE.Mesh(new THREE.PlaneGeometry(16,.07),lineMat);center.rotation.x=-Math.PI/2;center.position.y=.005;scene.add(center);
+for(const x of[-4.2,4.2]){const l=new THREE.Mesh(new THREE.PlaneGeometry(.05,28),new THREE.MeshBasicMaterial({color:0x8090a6,transparent:true,opacity:.13}));l.rotation.x=-Math.PI/2;l.position.set(x,.007,0);scene.add(l)}
+
+const loader=new GLTFLoader();
+let actors=[];
+function bindRig(root){
+ const get=n=>root.getObjectByName(n);
+ const rig={root,
+  pelvis:get('Pelvis'),spine:get('Spine'),chest:get('Chest'),neck:get('Neck'),head:get('Head'),
+  shoulderL:get('ShoulderL'),shoulderR:get('ShoulderR'),elbowL:get('ElbowL'),elbowR:get('ElbowR'),
+  hipL:get('HipL'),hipR:get('HipR'),kneeL:get('KneeL'),kneeR:get('KneeR'),ankleL:get('AnkleL'),ankleR:get('AnkleR'),footL:get('FootL'),footR:get('FootR')};
+ for(const [k,v] of Object.entries(rig)) if(k!=='root'&&!v) console.warn('missing',k);
+ root.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
+ root.userData.rig=rig;return rig;
+}
+function footCycle(phase){const stance=.60,front=.30,back=-.30;let z=0,lift=0,pitch=0,knee=0;if(phase<stance){const u=phase/stance;const s=u*u*(3-2*u);z=front+(back-front)*s;pitch=.13+(-.21-.13)*s;knee=.10+.07*Math.sin(s*Math.PI)}else{const u=(phase-stance)/(1-stance);const s=u*u*(3-2*u);z=back+(front-back)*s;lift=.16*Math.sin(s*Math.PI);pitch=-.05+(.16+.05)*s-.12*Math.sin(s*Math.PI);knee=.15+.46*Math.sin(s*Math.PI)}return{z,lift,pitch,knee}}
+function applyLeg(hip,knee,ankle,foot,s,m){const hs=s.z*.95*m;hip.rotation.x=hs;knee.rotation.x=-(s.knee+Math.max(0,-s.z)*.10)*m;ankle.position.y=-.84+s.lift*m;ankle.position.z=s.z*.42*m;ankle.rotation.x=(-hs*.16+s.pitch)*m;foot.rotation.x=(-s.pitch*.34)*m}
+function animateRig(actor,t,m=1){const r=actor.userData.rig;const hz=1.42*speed;const cyc=(t*hz)%1;const L=footCycle(cyc),R=footCycle((cyc+.5)%1);const w=Math.sin(cyc*Math.PI*2);r.pelvis.position.y=1.85+(0.015+.022*Math.cos(cyc*Math.PI*4))*m;r.pelvis.rotation.z=.032*w*m;r.pelvis.rotation.y=.038*w*m;r.spine.rotation.y=-.065*w*m;r.spine.rotation.z=-.012*w*m;r.neck.rotation.y=.022*w*m;applyLeg(r.hipL,r.kneeL,r.ankleL,r.footL,L,m);applyLeg(r.hipR,r.kneeR,r.ankleR,r.footR,R,m);const aL=R.z*.72*m,aR=L.z*.72*m;r.shoulderL.rotation.x=aL;r.shoulderR.rotation.x=aR;r.elbowL.rotation.x=-(.14+Math.max(0,aL)*.10)*m;r.elbowR.rotation.x=-(.14+Math.max(0,aR)*.10)*m}
+
+const gltf=await loader.loadAsync('./assets/reis_rauf_game_rig_v1.glb');
+const a=gltf.scene;a.name='ReisRaufBizim';bindRig(a);a.position.set(-2.15,0,8.3);a.rotation.y=Math.PI;scene.add(a);actors.push({obj:a,dir:-1,phase:0});
+const b=gltf.scene.clone(true);b.name='ReisRaufRakipTest';bindRig(b);b.position.set(2.15,0,-8.3);b.rotation.y=0;scene.add(b);actors.push({obj:b,dir:1,phase:.5});
+
+let paused=false,speed=1,close=false,elapsed=0;const clock=new THREE.Clock();
+document.getElementById('pause').onclick=e=>{paused=!paused;e.currentTarget.textContent=paused?'Devam et':'Duraklat'};
+document.getElementById('speed').oninput=e=>speed=+e.target.value;
+document.getElementById('cam').onclick=e=>{close=!close;e.currentTarget.textContent=close?'Kamera: Yakın':'Kamera: Arena'};
+function wrap(z,dir){if(dir<0&&z<-9.3)return 9.3;if(dir>0&&z>9.3)return-9.3;return z}
+function loop(){requestAnimationFrame(loop);const dt=Math.min(clock.getDelta(),.033);if(!paused)elapsed+=dt;const hz=1.42*speed,walk=(.60/.60)*hz*.82;if(!paused){for(const A of actors)A.obj.position.z=wrap(A.obj.position.z+A.dir*walk*dt,A.dir)}for(const A of actors)animateRig(A.obj,elapsed+A.phase/hz,paused?0:1);camera.position.lerp(new THREE.Vector3(0,close?6.2:11.5,close?9.2:16),.06);camera.lookAt(0,close?1.8:1.7,0);renderer.render(scene,camera)}loop();
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+</script>
+</body></html>
